@@ -1,16 +1,12 @@
-package main
+package fsconvert
 
 import (
-	"embed"
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 )
 
-//go:embed etc/*
-var content embed.FS
-
+// PrintTree displays a representation of a filesystem.
 func PrintTree(f fs.FS, w io.Writer) error {
 	err := fs.WalkDir(f, ".", func(path string, de fs.DirEntry, err error) error {
 		if err != nil {
@@ -26,12 +22,8 @@ func PrintTree(f fs.FS, w io.Writer) error {
 		size := info.Size()
 		mode := info.Mode()
 		modTime := info.ModTime()
-		fmt.Fprintf(w, "%s %8d %s %s\n", mode.String(), size, modTime.Format("2006-01-02 15:04"), path)
+		fmt.Fprintf(w, "%s %8d %s %s\n", mode.String(), size, modTime.Format("2006-01-02 15:04:05"), path)
 		return nil
 	})
 	return err
-}
-
-func main() {
-	PrintTree(content, os.Stdout)
 }
