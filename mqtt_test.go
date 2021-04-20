@@ -19,16 +19,16 @@ func TestMQTT(t *testing.T) {
 	} else {
 		out = io.Discard
 	}
-	conn, err := net.Dial("tcp", "127.0.0.1:1883")
+	conn, err := net.Dial("tcp", "10.13.13.1:1883")
 	if err != nil {
 		t.Log(err)
-		t.Fail()
+		t.FailNow()
 	}
 	c := mqtt.NewClientConn(conn)
 	err = c.Connect("", "")
 	if err != nil {
 		t.Log(err)
-		t.Fail()
+		t.FailNow()
 	}
 	c.Subscribe([]proto.TopicQos{proto.TopicQos{Topic: "#", Qos: proto.QosAtMostOnce}})
 	timeout := time.After(2 * time.Second)
