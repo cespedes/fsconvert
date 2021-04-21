@@ -10,7 +10,7 @@ import (
 //go:embed [a-z]*
 var content embed.FS
 
-func TestPrintTree(t *testing.T) {
+func TestEmbed(t *testing.T) {
 	var out io.Writer
 	if testing.Verbose() {
 		out = os.Stdout
