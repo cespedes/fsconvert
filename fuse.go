@@ -2,10 +2,12 @@ package fsconvert
 
 import (
 	"context"
+	"hash/crc64"
 	"io/fs"
 	"log"
 	"os"
-	//"syscall"
+	"path"
+	"syscall"
 
 	"bazil.org/fuse"
 	fusefs "bazil.org/fuse/fs"
@@ -13,7 +15,7 @@ import (
 
 // ToFUSE mountes a filesystem using FUSE on the named mountpoint.
 func ToFUSE(fsys fs.FS, mountpoint string) error {
-	log.Printf("Will mount filesystem to %s\n", mountpoint)
+	log.Printf("ToFUSE: Will mount filesystem to %s\n", mountpoint)
 	c, err := fuse.Mount(mountpoint, fuse.FSName("fsconvert"), fuse.Subtype("ToFUSE"))
 	if err != nil {
 		log.Fatal(err)
@@ -32,36 +34,81 @@ type fuseFS struct {
 	fsys fs.FS
 }
 
-func (fuseFS) Root() (fusefs.Node, error) {
-	return fuseDir{}, nil
+func (f fuseFS) Root() (fusefs.Node, error) {
+	return fuseDir{fsys: f.fsys, path: "."}, nil
 }
 
-// fuseDir implements both Node and Handle for the root directory.
-type fuseDir struct{}
+type fuseDir struct {
+	fsys fs.FS
+	path string
+}
 
-func (fuseDir) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Inode = 1
+func fuseCalcInode(name string) uint64 {
+	return crc64.Checksum([]byte(name), crc64.MakeTable(crc64.ISO))
+}
+
+func (dir fuseDir) Attr(ctx context.Context, a *fuse.Attr) error {
+	a.Inode = fuseCalcInode(dir.path)
+	log.Printf("FUSE:Attr(dir=%s): inode=%d\n", dir.path, a.Inode)
 	a.Mode = os.ModeDir | 0o555
 	return nil
 }
 
-/*
-func (fuseDir) Lookup(ctx context.Context, name string) (fusefs.Node, error) {
-	if name == "hello" {
-		return fuseFile{}, nil
+func (dir fuseDir) Lookup(ctx context.Context, name string) (fusefs.Node, error) {
+	log.Printf("FUSE:Lookup(dir=%s, name=%s)\n", dir.path, name)
+	newpath := path.Join(dir.path, name)
+	fi, err := fs.Stat(dir.fsys, newpath)
+	if err != nil {
+		return nil, syscall.ENOENT
 	}
-	return nil, syscall.ENOENT
+	if fi.IsDir() {
+		return fuseDir{fsys: dir.fsys, path: newpath}, nil
+	}
+	return fuseFile{fsys: dir.fsys, path: newpath}, nil
 }
 
-func (fuseDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	var dirDirs = []fuse.Dirent{
-		{Inode: 2, Name: "hello", Type: fuse.DT_File},
+func (dir fuseDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	log.Printf("FUSE:ReadDirAll(dir=%s)\n", dir.path)
+	entries, err := fs.ReadDir(dir.fsys, dir.path)
+	if err != nil {
+		return nil, err
 	}
-	return dirDirs, nil
+	var result []fuse.Dirent
+	for _, e := range entries {
+		name := e.Name()
+		isDir := e.IsDir()
+		var t fuse.DirentType = fuse.DT_File
+		if isDir {
+			t = fuse.DT_Dir
+		}
+		result = append(result, fuse.Dirent{Inode: fuseCalcInode(path.Join(dir.path, name)), Name: name, Type: t})
+	}
+	return result, nil
 }
+
+type fuseFile struct {
+	fsys fs.FS
+	path string
+}
+
+func (file fuseFile) Attr(ctx context.Context, a *fuse.Attr) error {
+	fi, err := fs.Stat(file.fsys, file.path)
+	if err != nil {
+		return syscall.ENOENT
+	}
+	a.Inode = fuseCalcInode(file.path)
+	a.Mode = fi.Mode()
+	a.Size = uint64(fi.Size())
+	return nil
+}
+
+func (file fuseFile) ReadAll(ctx context.Context) ([]byte, error) {
+	return fs.ReadFile(file.fsys, file.path)
+}
+
+/*
 
 // fuseFile implements both Node and Handle for the hello file.
-type fuseFile struct{}
 
 const fuseGreeting = "hello, world\n"
 
