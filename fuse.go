@@ -4,7 +4,6 @@ import (
 	"context"
 	"hash/crc64"
 	"io/fs"
-	"log"
 	"os"
 	"path"
 	"syscall"
@@ -15,16 +14,15 @@ import (
 
 // ToFUSE mountes a filesystem using FUSE on the named mountpoint.
 func ToFUSE(fsys fs.FS, mountpoint string) error {
-	log.Printf("ToFUSE: Will mount filesystem to %s\n", mountpoint)
 	c, err := fuse.Mount(mountpoint, fuse.FSName("fsconvert"), fuse.Subtype("ToFUSE"))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer c.Close()
 
 	err = fusefs.Serve(c, fuseFS{fsys: fsys})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	return nil
 }
@@ -49,13 +47,11 @@ func fuseCalcInode(name string) uint64 {
 
 func (dir fuseDir) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Inode = fuseCalcInode(dir.path)
-	log.Printf("FUSE:Attr(dir=%s): inode=%d\n", dir.path, a.Inode)
 	a.Mode = os.ModeDir | 0o555
 	return nil
 }
 
 func (dir fuseDir) Lookup(ctx context.Context, name string) (fusefs.Node, error) {
-	log.Printf("FUSE:Lookup(dir=%s, name=%s)\n", dir.path, name)
 	newpath := path.Join(dir.path, name)
 	fi, err := fs.Stat(dir.fsys, newpath)
 	if err != nil {
@@ -68,7 +64,6 @@ func (dir fuseDir) Lookup(ctx context.Context, name string) (fusefs.Node, error)
 }
 
 func (dir fuseDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	log.Printf("FUSE:ReadDirAll(dir=%s)\n", dir.path)
 	entries, err := fs.ReadDir(dir.fsys, dir.path)
 	if err != nil {
 		return nil, err
@@ -99,6 +94,8 @@ func (file fuseFile) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Inode = fuseCalcInode(file.path)
 	a.Mode = fi.Mode()
 	a.Size = uint64(fi.Size())
+	a.Mtime = fi.ModTime()
+	a.Ctime = a.Mtime
 	return nil
 }
 
